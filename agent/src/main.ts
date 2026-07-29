@@ -43,8 +43,8 @@ export default defineAgent({
         // answering based on a partial transcript while the caller is still talking.
         preemptiveGeneration: { enabled: false },
         endpointing: {
-          minDelay: 800,
-          maxDelay: 3500,
+          minDelay: 1500,
+          maxDelay: 4500,
         },
       },
     });
