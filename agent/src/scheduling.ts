@@ -11,7 +11,7 @@ export type AppointmentStatus = 'confirmed' | 'cancelled';
 export type Appointment = {
   id: string;
   customerName: string;
-  phone: string;
+  email: string;
   service: ServiceId;
   date: string;
   time: string;
@@ -47,8 +47,8 @@ function isMorning(time: string) {
   return time.endsWith('AM');
 }
 
-function normalizedPhone(phone: string) {
-  return phone.replace(/\D/g, '');
+function normalizedEmail(email: string) {
+  return email.trim().toLowerCase();
 }
 
 export class SchedulingService {
@@ -101,7 +101,7 @@ export class SchedulingService {
     }
     const appointment: Appointment = {
       ...request,
-      phone: normalizedPhone(request.phone),
+      email: normalizedEmail(request.email),
       id: `apt_${this.nextId++}`,
       status: 'confirmed',
     };
@@ -109,10 +109,10 @@ export class SchedulingService {
     return appointment;
   }
 
-  findAppointments(phone: string) {
-    const customerPhone = normalizedPhone(phone);
+  findAppointments(email: string) {
+    const customerEmail = normalizedEmail(email);
     return this.appointments.filter(
-      (appointment) => appointment.phone === customerPhone && appointment.status === 'confirmed',
+      (appointment) => appointment.email === customerEmail && appointment.status === 'confirmed',
     );
   }
 

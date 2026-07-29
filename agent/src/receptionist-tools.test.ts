@@ -47,7 +47,7 @@ describe('receptionist tools', () => {
     const bookAppointment = toolNamed('bookAppointment', scheduler);
     const request = {
       customerName: 'John Smith',
-      phone: '4155550142',
+      email: 'john@example.com',
       service: 'oil_change',
       date: '2026-07-28',
       time: '10:30 AM',
@@ -55,7 +55,7 @@ describe('receptionist tools', () => {
 
     const result = await bookAppointment.execute({ ...request, customerConfirmed: false }, {});
     expect(result).toMatchObject({ booked: false });
-    expect(scheduler.findAppointments(request.phone)).toHaveLength(0);
+    expect(scheduler.findAppointments(request.email)).toHaveLength(0);
 
     const confirmed = await bookAppointment.execute({ ...request, customerConfirmed: true }, {});
     expect(confirmed).toMatchObject({ booked: true, appointment: { time: '10:30 AM' } });

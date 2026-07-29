@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SchedulingService, type ServiceId, services } from './scheduling.ts';
 
 const serviceSchema = z.enum(['oil_change', 'tire_rotation', 'brake_inspection', 'diagnostic']);
-const phoneSchema = z.string().min(7).describe('Customer phone number, including area code.');
+const emailSchema = z.string().email().describe('Customer email address in standard name@example.com format.');
 
 export type ReceptionistEvent =
   | {
@@ -88,7 +88,7 @@ export function createReceptionistTools(
         'Create a confirmed appointment. Call only after the customer has heard and explicitly confirmed the service, date, time, and contact details.',
       parameters: z.object({
         customerName: z.string().min(2).describe('Customer full name.'),
-        phone: phoneSchema,
+        email: emailSchema,
         service: serviceSchema.describe('Service to book.'),
         date: z.string().describe('Appointment date in YYYY-MM-DD format.'),
         time: z.string().describe('Exact time returned by checkAvailability.'),
@@ -112,10 +112,10 @@ export function createReceptionistTools(
     llm.tool({
       name: 'lookupCustomerAppointments',
       description:
-        'Find a customer’s active appointments by phone number before a cancellation or reschedule.',
-      parameters: z.object({ phone: phoneSchema }),
-      execute: async ({ phone }) => ({
-        appointments: scheduler.findAppointments(phone).map(appointmentSummary),
+        'Find a customer’s active appointments by email address before a cancellation or reschedule.',
+      parameters: z.object({ email: emailSchema }),
+      execute: async ({ email }) => ({
+        appointments: scheduler.findAppointments(email).map(appointmentSummary),
       }),
     }),
     llm.tool({

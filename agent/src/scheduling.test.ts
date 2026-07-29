@@ -25,7 +25,7 @@ describe('SchedulingService', () => {
     const scheduler = new SchedulingService();
     const request = {
       customerName: 'John Smith',
-      phone: '4155550142',
+      email: 'john@example.com',
       service: 'oil_change',
       date: '2026-07-28',
       time: '10:30 AM',
@@ -45,7 +45,7 @@ describe('SchedulingService', () => {
     const scheduler = new SchedulingService();
     const appointment = scheduler.bookAppointment({
       customerName: 'John Smith',
-      phone: '4155550142',
+      email: 'john@example.com',
       service: 'oil_change',
       date: '2026-07-28',
       time: '9:00 AM',
