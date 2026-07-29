@@ -1,0 +1,7 @@
+packages:
+  - '.'
+
+allowBuilds:
+  '@livekit/local-inference': true
+  protobufjs: true
+  sharp: true

@@ -1,0 +1,35 @@
+{
+  "name": "graham-auto-ai-receptionist",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:token": "tsx server/token-server.ts",
+    "build": "tsc -p tsconfig.server.json --noEmit && tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@livekit/protocol": "^1.43.0",
+    "@livekit/components-react": "^2.9.0",
+    "dotenv": "^17.4.1",
+    "express": "^5.1.0",
+    "livekit-client": "^2.13.0",
+    "livekit-server-sdk": "^2.17.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/express": "^5.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "tsx": "^4.20.5",
+    "vite": "^4.5.5"
+  }
+}
