@@ -6,6 +6,15 @@ const serviceSchema = z.enum(['oil_change', 'tire_rotation', 'brake_inspection',
 const phoneSchema = z.string().min(7).describe('Customer phone number, including area code.');
 
 export type ReceptionistEvent =
+  | {
+      type: 'availability_checked';
+      availability: {
+        date: string;
+        service: string;
+        available: string[];
+        closed: boolean;
+      };
+    }
   | { type: 'appointment_booked'; appointment: ReturnType<typeof appointmentSummary> }
   | { type: 'appointment_rescheduled'; appointment: ReturnType<typeof appointmentSummary> }
   | { type: 'appointment_cancelled'; appointment: ReturnType<typeof appointmentSummary> }
@@ -59,8 +68,19 @@ export function createReceptionistTools(
           .optional()
           .describe('Requested part of day, if known.'),
       }),
-      execute: async ({ date, service, timeOfDay }) =>
-        scheduler.checkAvailability({ date, service, timeOfDay }),
+      execute: async ({ date, service, timeOfDay }) => {
+        const availability = scheduler.checkAvailability({ date, service, timeOfDay });
+        await options.onEvent?.({
+          type: 'availability_checked',
+          availability: {
+            date: availability.date,
+            service: services[service].name,
+            available: availability.available,
+            closed: availability.closed,
+          },
+        });
+        return availability;
+      },
     }),
     llm.tool({
       name: 'bookAppointment',

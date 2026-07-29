@@ -10,18 +10,33 @@ import { createReceptionCall } from './livekit'
 type CallState = 'connected' | 'waiting' | 'ended'
 
 type Transcript = {
+  id: string
   speaker: 'Customer' | 'Receptionist'
   time: string
   text: string
 }
 
-const initialTranscript: Transcript[] = [
-  { speaker: 'Receptionist', time: '10:06 AM', text: 'Thanks for calling Graham Auto Repair. This is Graham’s virtual receptionist. How can I help?' },
-  { speaker: 'Customer', time: '10:06 AM', text: 'Hi, I need to schedule an oil change this Thursday morning.' },
-  { speaker: 'Receptionist', time: '10:06 AM', text: 'Of course. Let me check our Thursday-morning availability for an oil change.' },
-]
+type LiveAppointment = {
+  service: string
+  date: string
+  available: string[]
+  bookedTime?: string
+  status: 'idle' | 'checking' | 'confirmed' | 'cancelled'
+}
 
-const availability = ['9:00 AM', '10:30 AM', '11:00 AM']
+type ReceptionistEvent =
+  | { type: 'availability_checked'; availability: Pick<LiveAppointment, 'service' | 'date' | 'available'> & { closed: boolean } }
+  | { type: 'appointment_booked'; appointment: { service: string; date: string; time: string } }
+  | { type: 'appointment_rescheduled'; appointment: { service: string; date: string; time: string } }
+  | { type: 'appointment_cancelled'; appointment: { service: string; date: string; time: string } }
+  | { type: 'human_takeover_requested'; reason: string }
+
+const initialAppointment: LiveAppointment = {
+  service: 'No appointment selected',
+  date: 'Start a call to check availability',
+  available: [],
+  status: 'idle',
+}
 
 function Avatar({ initials, tone = 'blue' }: { initials: string; tone?: string }) {
   return <div className={`avatar ${tone}`}>{initials}</div>
@@ -36,16 +51,18 @@ function Waveform({ active }: { active: boolean }) {
 }
 
 function App() {
-  const [callState, setCallState] = useState<CallState>('connected')
+  const [callState, setCallState] = useState<CallState>('waiting')
   const [takeover, setTakeover] = useState(false)
   const [booked, setBooked] = useState<string | null>(null)
-  const [transcript, setTranscript] = useState(initialTranscript)
+  const [transcript, setTranscript] = useState<Transcript[]>([])
+  const [appointment, setAppointment] = useState<LiveAppointment>(initialAppointment)
   const [mobileNav, setMobileNav] = useState(false)
   const [duration, setDuration] = useState(382)
   const [browserRoom, setBrowserRoom] = useState<Room | null>(null)
   const [browserCallError, setBrowserCallError] = useState<string | null>(null)
   const [isStartingBrowserCall, setIsStartingBrowserCall] = useState(false)
   const audioElements = useRef<HTMLAudioElement[]>([])
+  const receivedTranscriptIds = useRef(new Set<string>())
 
   useEffect(() => {
     if (callState !== 'connected') return
@@ -60,24 +77,58 @@ function App() {
 
   const displayDuration = `${String(Math.floor(duration / 60)).padStart(2, '0')}:${String(duration % 60).padStart(2, '0')}`
 
-  const addDemoTurn = () => {
-    if (booked) return
-    setTranscript((items) => [...items,
-      { speaker: 'Receptionist', time: '10:07 AM', text: 'We have appointments at 9:00, 10:30, or 11:00. Which works best for you?' },
-      { speaker: 'Customer', time: '10:07 AM', text: '10:30 would be great.' },
-    ])
+  const addTranscript = (speaker: Transcript['speaker'], text: string, id: string) => {
+    if (!text.trim() || receivedTranscriptIds.current.has(id)) return
+    receivedTranscriptIds.current.add(id)
+    setTranscript((items) => [...items, {
+      id,
+      speaker,
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      text,
+    }])
   }
 
-  const bookAppointment = (time: string) => {
-    setBooked(time)
-    setTranscript((items) => [...items, {
-      speaker: 'Receptionist', time: '10:08 AM', text: `Perfect — you’re booked for an oil change this Thursday at ${time}. We’ll see you then!`,
-    }])
+  const applyReceptionistEvent = (event: ReceptionistEvent) => {
+    if (event.type === 'availability_checked') {
+      setBooked(null)
+      setAppointment({
+        service: event.availability.service,
+        date: event.availability.date,
+        available: event.availability.available,
+        status: 'checking',
+      })
+      return
+    }
+
+    if (event.type === 'appointment_booked' || event.type === 'appointment_rescheduled') {
+      setBooked(event.appointment.time)
+      setAppointment({
+        service: event.appointment.service,
+        date: event.appointment.date,
+        available: [event.appointment.time],
+        bookedTime: event.appointment.time,
+        status: 'confirmed',
+      })
+      return
+    }
+
+    if (event.type === 'appointment_cancelled') {
+      setBooked(null)
+      setAppointment((current) => ({
+        ...current,
+        service: event.appointment.service,
+        date: event.appointment.date,
+        bookedTime: undefined,
+        status: 'cancelled',
+      }))
+    }
   }
 
   const startBrowserCall = async () => {
     setIsStartingBrowserCall(true)
     setBrowserCallError(null)
+    setTranscript([])
+    receivedTranscriptIds.current.clear()
     const room = new Room()
     room.on(RoomEvent.TrackSubscribed, (track) => {
       if (track.kind !== Track.Kind.Audio) return
@@ -89,12 +140,27 @@ function App() {
         audioElements.current.push(element)
       }
     })
+    room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+      if (topic !== 'graham-auto.reception') return
+      try {
+        applyReceptionistEvent(JSON.parse(new TextDecoder().decode(payload)) as ReceptionistEvent)
+      } catch {
+        // Ignore malformed data from other room participants.
+      }
+    })
+    room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+      const speaker = participant?.identity.startsWith('customer-') ? 'Customer' : 'Receptionist'
+      segments.filter((segment) => segment.final).forEach((segment) => {
+        addTranscript(speaker, segment.text, segment.id)
+      })
+    })
 
     try {
       const credentials = await createReceptionCall('Website customer')
       await room.connect(credentials.url, credentials.token)
       await room.localParticipant.setMicrophoneEnabled(true)
       setBrowserRoom(room)
+      setCallState('connected')
     } catch {
       room.disconnect()
       setBrowserCallError('We could not start the voice call. Check that the token API and agent worker are running.')
@@ -108,6 +174,7 @@ function App() {
     audioElements.current.forEach((element) => element.remove())
     audioElements.current = []
     setBrowserRoom(null)
+    setCallState('ended')
   }
 
   return (
@@ -171,17 +238,17 @@ function App() {
           <section className="dashboard-grid" id="calls">
             <article className="panel live-call-panel">
               <div className="panel-heading">
-                <div><div className="live-label"><span />LIVE CALL</div><h2>John Smith</h2><p><Phone size={14} />(415) 555-0142 <b>•</b> {displayDuration}</p></div>
+                <div><div className="live-label"><span />{browserRoom ? 'LIVE CALL' : 'CALL STATUS'}</div><h2>{browserRoom ? 'Website customer' : 'No active caller'}</h2><p><Phone size={14} />{browserRoom ? `Browser voice call • ${displayDuration}` : 'Start a browser call to connect'}</p></div>
                 <button className="more"><MoreHorizontal size={21} /></button>
               </div>
               <div className="call-participants">
-                <div className="participant customer"><Avatar initials="JS" tone="navy" /><div><strong>John Smith</strong><span>Customer</span></div><Waveform active={callState === 'connected'} /></div>
+                <div className="participant customer"><Avatar initials={browserRoom ? 'WC' : '--'} tone="navy" /><div><strong>{browserRoom ? 'Website customer' : 'Waiting for a caller'}</strong><span>Customer</span></div><Waveform active={callState === 'connected'} /></div>
                 <div className="connection-line"><i /><i /><i /></div>
                 <div className="participant agent"><div className="agent-avatar"><Sparkles size={22} /></div><div><strong>Graham's Receptionist</strong><span>AI assistant</span></div><div className="listening"><span />Listening</div></div>
               </div>
               <div className="call-action-row">
-                <button className="takeover-button" onClick={() => setTakeover(!takeover)}><Headphones size={18} />{takeover ? 'You’re on the call' : 'Join & take over'}</button>
-                <button className={`hangup ${callState === 'ended' ? 'ended' : ''}`} onClick={() => setCallState(callState === 'ended' ? 'connected' : 'ended')}><PhoneOff size={18} />{callState === 'ended' ? 'Reconnect' : 'End call'}</button>
+                <button className="takeover-button" onClick={() => setTakeover(!takeover)} disabled={!browserRoom}><Headphones size={18} />{takeover ? 'You’re on the call' : 'Join & take over'}</button>
+                <button className={`hangup ${callState === 'ended' ? 'ended' : ''}`} onClick={endBrowserCall} disabled={!browserRoom}><PhoneOff size={18} />End call</button>
               </div>
               {takeover && <div className="takeover-note"><Mic size={16} />Your microphone is ready. The AI will continue to assist quietly.</div>}
             </article>
@@ -190,20 +257,21 @@ function App() {
               <div className="panel-heading compact"><div><h2>Live transcript</h2><p><span className="online-dot" /> Updating in real time</p></div><button className="view-all">View full call</button></div>
               <div className="transcript" aria-live="polite">
                 {transcript.map((line, index) => <div className={`transcript-line ${line.speaker === 'Receptionist' ? 'agent-line' : ''}`} key={`${line.time}-${index}`}><span><b>{line.speaker}</b><small>{line.time}</small></span><p>{line.text}</p></div>)}
+                {!transcript.length && <p className="muted">Start a browser call to see the live conversation.</p>}
               </div>
-              {!booked && <button className="demo-turn" onClick={addDemoTurn}>Play next conversation turn <span>→</span></button>}
             </article>
           </section>
 
           <section className="lower-grid" id="calendar">
             <article className="panel appointment-panel">
-              <div className="panel-heading compact"><div><h2>Appointment in progress</h2><p>AI is checking availability</p></div><span className="status-pill">In progress</span></div>
-              <div className="appointment-summary"><div className="service-icon"><Wrench size={19} /></div><div><strong>Oil change</strong><span>Thursday, May 23 <b>•</b> Morning</span></div><button className="more"><MoreHorizontal size={20} /></button></div>
+              <div className="panel-heading compact"><div><h2>Appointment status</h2><p>{appointment.status === 'confirmed' ? 'Voice booking confirmed' : appointment.status === 'checking' ? 'AI checked live availability' : 'Waiting for a voice request'}</p></div><span className="status-pill">{appointment.status === 'confirmed' ? 'Confirmed' : appointment.status === 'checking' ? 'In progress' : 'Ready'}</span></div>
+              <div className="appointment-summary"><div className="service-icon"><Wrench size={19} /></div><div><strong>{appointment.service}</strong><span>{appointment.date}{appointment.status === 'checking' && ' • Available times below'}</span></div><button className="more"><MoreHorizontal size={20} /></button></div>
               <div className="availability-label"><Clock3 size={16} />Available times</div>
               <div className="time-options">
-                {availability.map((time) => <button className={booked === time ? 'selected' : ''} onClick={() => bookAppointment(time)} disabled={Boolean(booked) && booked !== time} key={time}>{time}{booked === time && <span>Booked</span>}</button>)}
+                {appointment.available.map((time) => <button className={booked === time ? 'selected' : ''} disabled key={time}>{time}{booked === time && <span>Booked</span>}</button>)}
+                {!appointment.available.length && <span className="muted">Availability will appear after the receptionist checks it.</span>}
               </div>
-              {booked && <p className="confirmation"><span>✓</span>Appointment confirmed for Thursday at {booked}.</p>}
+              {booked && <p className="confirmation"><span>✓</span>Appointment confirmed for {appointment.date} at {booked}.</p>}
             </article>
 
             <article className="panel schedule-panel">

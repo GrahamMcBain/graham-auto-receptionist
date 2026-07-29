@@ -16,12 +16,30 @@ function toolNamed(name: string, scheduler = new SchedulingService()) {
 
 describe('receptionist tools', () => {
   it('returns real availability for an appointment request', async () => {
-    const result = await toolNamed('checkAvailability').execute(
+    const events: unknown[] = [];
+    const tools = createReceptionistTools(new SchedulingService(), {
+      onEvent: (event) => events.push(event),
+    }) as unknown as Tool[];
+    const availability = tools.find((candidate) => candidate.name === 'checkAvailability');
+    if (!availability) throw new Error('Missing checkAvailability tool');
+
+    const result = await availability.execute(
       { date: '2026-07-28', service: 'oil_change', timeOfDay: 'morning' },
       {},
     );
 
     expect(result).toMatchObject({ available: ['9:00 AM', '10:30 AM', '11:00 AM'] });
+    expect(events).toEqual([
+      {
+        type: 'availability_checked',
+        availability: {
+          date: '2026-07-28',
+          service: 'Oil change',
+          available: ['9:00 AM', '10:30 AM', '11:00 AM'],
+          closed: false,
+        },
+      },
+    ]);
   });
 
   it('does not create an appointment before the customer confirms', async () => {

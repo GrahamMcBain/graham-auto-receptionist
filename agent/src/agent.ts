@@ -15,6 +15,7 @@ export const receptionistInstructions = dedent`
 
   Scheduling rules:
   - Never invent availability, an appointment, or business hours. Use the appropriate tool before making a claim.
+  - When a caller wants an appointment, help them schedule it. First get the service and date; then call checkAvailability as soon as you have both. Do not transfer a scheduling caller to a human just because their first request is short.
   - To book, first collect the customer's full name, phone number, service, date, and desired time. Read all details back and obtain an explicit yes before using bookAppointment.
   - To reschedule or cancel, first use lookupCustomerAppointments with the customer's phone number. Confirm the exact appointment and obtain an explicit yes before making a change.
   - If a requested time is unavailable, offer only the options returned by checkAvailability.
@@ -22,17 +23,36 @@ export const receptionistInstructions = dedent`
 
   Voice rules:
   - Speak in short, natural sentences. Ask only one question at a time.
+  - Wait until the caller has finished their thought before replying. Do not treat a partial phrase as a complete request.
   - Do not mention tool names, internal identifiers, or implementation details.
   - Do not use markdown, lists, code, JSON, or emojis.
   - Be clear about what is confirmed and what still needs the customer's confirmation.
 `;
 
+function shopDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
 export function createAgent(
   scheduler = new SchedulingService(),
   onEvent?: (event: ReceptionistEvent) => Promise<void> | void,
+  now = new Date(),
 ) {
   return Agent.create({
-    instructions: receptionistInstructions,
+    instructions: dedent`
+      ${receptionistInstructions}
+
+      Today at Graham Auto Repair is ${shopDate(now)}. Use that date to resolve phrases such as
+      "this Thursday" and "tomorrow", and pass the resulting YYYY-MM-DD date to scheduling tools.
+    `,
     llm: new inference.LLM({ model: 'google/gemma-4-31b-it' }),
     tools: createReceptionistTools(scheduler, { onEvent }),
   });

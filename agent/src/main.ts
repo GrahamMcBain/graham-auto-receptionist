@@ -22,7 +22,7 @@ export default defineAgent({
       // See all available models at https://docs.livekit.io/agents/models/stt/
       stt: new inference.STT({
         model: 'deepgram/nova-3',
-        language: 'multi',
+        language: 'en-US',
       }),
 
       // Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
@@ -39,8 +39,13 @@ export default defineAgent({
       // See more at https://docs.livekit.io/agents/logic/turns/turn-detector/
       turnHandling: {
         turnDetection: new inference.TurnDetector(),
-        // Allow the LLM to generate a response while waiting for the end of turn
-        preemptiveGeneration: { enabled: true },
+        // A receptionist needs complete details (service, date, and time), so avoid
+        // answering based on a partial transcript while the caller is still talking.
+        preemptiveGeneration: { enabled: false },
+        endpointing: {
+          minDelay: 800,
+          maxDelay: 3500,
+        },
       },
     });
 
