@@ -8,6 +8,7 @@ import {
 import { createReceptionCall } from './livekit'
 
 type CallState = 'connected' | 'waiting' | 'ended'
+type WorkspaceView = 'overview' | 'calls' | 'appointments' | 'customers' | 'settings'
 
 type Transcript = {
   id: string
@@ -51,6 +52,7 @@ function Waveform({ active }: { active: boolean }) {
 }
 
 function App() {
+  const [activeView, setActiveView] = useState<WorkspaceView>('overview')
   const [callState, setCallState] = useState<CallState>('waiting')
   const [takeover, setTakeover] = useState(false)
   const [booked, setBooked] = useState<string | null>(null)
@@ -177,6 +179,11 @@ function App() {
     setCallState('ended')
   }
 
+  const navigate = (view: WorkspaceView) => {
+    setActiveView(view)
+    setMobileNav(false)
+  }
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? 'open' : ''}`}>
@@ -186,13 +193,13 @@ function App() {
         </div>
         <p className="workspace-label">RECEPTION DESK</p>
         <nav>
-          <a className="nav-item active" href="#dashboard"><LayoutDashboard size={19} />Overview</a>
-          <a className="nav-item" href="#calls"><PhoneCall size={19} />Calls <span className="nav-count">1</span></a>
-          <a className="nav-item" href="#calendar"><CalendarDays size={19} />Appointments</a>
-          <a className="nav-item" href="#customers"><Users size={19} />Customers</a>
+          <button className={`nav-item ${activeView === 'overview' ? 'active' : ''}`} onClick={() => navigate('overview')}><LayoutDashboard size={19} />Overview</button>
+          <button className={`nav-item ${activeView === 'calls' ? 'active' : ''}`} onClick={() => navigate('calls')}><PhoneCall size={19} />Calls {browserRoom && <span className="nav-count">1</span>}</button>
+          <button className={`nav-item ${activeView === 'appointments' ? 'active' : ''}`} onClick={() => navigate('appointments')}><CalendarDays size={19} />Appointments</button>
+          <button className={`nav-item ${activeView === 'customers' ? 'active' : ''}`} onClick={() => navigate('customers')}><Users size={19} />Customers</button>
         </nav>
         <div className="sidebar-bottom">
-          <a className="nav-item" href="#settings"><Settings size={19} />Settings</a>
+          <button className={`nav-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')}><Settings size={19} />Settings</button>
           <div className="profile">
             <Avatar initials="GM" tone="peach" />
             <div><strong>Graham McBain</strong><small>Shop manager</small></div>
@@ -212,7 +219,8 @@ function App() {
           </div>
         </header>
 
-        <div className="content" id="dashboard">
+        <div className="content">
+          {activeView === 'overview' && <>
           <section className="welcome-row">
             <div>
               <p className="eyebrow">TUESDAY, MAY 21</p>
@@ -224,7 +232,7 @@ function App() {
                 {browserRoom ? <PhoneOff size={19} /> : <Phone size={19} />}
                 {isStartingBrowserCall ? 'Connecting…' : browserRoom ? 'End browser call' : 'Call receptionist'}
               </button>
-              <button className="new-appointment"><Plus size={19} />New appointment</button>
+              <button className="new-appointment" onClick={() => navigate('appointments')}><Plus size={19} />New appointment</button>
             </div>
           </section>
           {browserCallError && <p className="browser-call-error">{browserCallError}</p>}
@@ -254,7 +262,7 @@ function App() {
             </article>
 
             <article className="panel transcript-panel">
-              <div className="panel-heading compact"><div><h2>Live transcript</h2><p><span className="online-dot" /> Updating in real time</p></div><button className="view-all">View full call</button></div>
+              <div className="panel-heading compact"><div><h2>Live transcript</h2><p><span className="online-dot" /> Updating in real time</p></div><button className="view-all" onClick={() => navigate('calls')}>View full call</button></div>
               <div className="transcript" aria-live="polite">
                 {transcript.map((line, index) => <div className={`transcript-line ${line.speaker === 'Receptionist' ? 'agent-line' : ''}`} key={`${line.time}-${index}`}><span><b>{line.speaker}</b><small>{line.time}</small></span><p>{line.text}</p></div>)}
                 {!transcript.length && <p className="muted">Start a browser call to see the live conversation.</p>}
@@ -275,7 +283,7 @@ function App() {
             </article>
 
             <article className="panel schedule-panel">
-              <div className="panel-heading compact"><div><h2>Today’s schedule</h2><p>Tuesday, May 21</p></div><button className="view-all">View calendar</button></div>
+              <div className="panel-heading compact"><div><h2>Today’s schedule</h2><p>Tuesday, May 21</p></div><button className="view-all" onClick={() => navigate('appointments')}>View calendar</button></div>
               <div className="schedule-list">
                 <div><time>9:00<span>AM</span></time><i className="teal" /><p><strong>Maria Rodriguez</strong><span>Tire rotation</span></p></div>
                 <div><time>10:30<span>AM</span></time><i className="orange" /><p><strong>David Wilson</strong><span>Brake inspection</span></p></div>
@@ -283,6 +291,37 @@ function App() {
               </div>
             </article>
           </section>
+          </>}
+
+          {activeView === 'calls' && <>
+            <section className="welcome-row workspace-header">
+              <div><p className="eyebrow">CALL ACTIVITY</p><h1>Calls</h1><p className="subcopy">Monitor the live receptionist and review the conversation.</p></div>
+              <button className={`browser-call ${browserRoom ? 'active' : ''}`} onClick={browserRoom ? endBrowserCall : startBrowserCall} disabled={isStartingBrowserCall}>
+                {browserRoom ? <PhoneOff size={19} /> : <Phone size={19} />}
+                {isStartingBrowserCall ? 'Connecting…' : browserRoom ? 'End browser call' : 'Start a call'}
+              </button>
+            </section>
+            {browserCallError && <p className="browser-call-error">{browserCallError}</p>}
+            <section className="page-grid">
+              <article className="panel live-call-panel">
+                <div className="panel-heading"><div><div className="live-label"><span />{browserRoom ? 'LIVE CALL' : 'NO ACTIVE CALL'}</div><h2>{browserRoom ? 'Website customer' : 'Receptionist standing by'}</h2><p><Phone size={14} />{browserRoom ? `Browser voice call • ${displayDuration}` : 'Start a call from this page or Overview'}</p></div></div>
+                <div className="call-participants"><div className="participant customer"><Avatar initials={browserRoom ? 'WC' : '--'} tone="navy" /><div><strong>{browserRoom ? 'Website customer' : 'Waiting for a caller'}</strong><span>Customer</span></div><Waveform active={callState === 'connected'} /></div><div className="connection-line"><i /><i /><i /></div><div className="participant agent"><div className="agent-avatar"><Sparkles size={22} /></div><div><strong>Graham's Receptionist</strong><span>AI assistant</span></div><div className="listening"><span />{browserRoom ? 'Listening' : 'Ready'}</div></div></div>
+                <div className="call-action-row"><button className="takeover-button" onClick={() => setTakeover(!takeover)} disabled={!browserRoom}><Headphones size={18} />{takeover ? 'You’re on the call' : 'Join & take over'}</button><button className="hangup" onClick={endBrowserCall} disabled={!browserRoom}><PhoneOff size={18} />End call</button></div>
+              </article>
+              <article className="panel transcript-panel full-transcript-panel"><div className="panel-heading compact"><div><h2>Call transcript</h2><p><span className="online-dot" /> Live from LiveKit</p></div></div><div className="transcript" aria-live="polite">{transcript.map((line) => <div className={`transcript-line ${line.speaker === 'Receptionist' ? 'agent-line' : ''}`} key={line.id}><span><b>{line.speaker}</b><small>{line.time}</small></span><p>{line.text}</p></div>)}{!transcript.length && <p className="muted">The transcript will appear as soon as the call begins.</p>}</div></article>
+            </section>
+          </>}
+
+          {activeView === 'appointments' && <>
+            <section className="welcome-row workspace-header"><div><p className="eyebrow">SCHEDULING</p><h1>Appointments</h1><p className="subcopy">Voice bookings appear here as soon as the receptionist confirms them.</p></div><button className="browser-call" onClick={browserRoom ? endBrowserCall : startBrowserCall}>{browserRoom ? <PhoneOff size={19} /> : <Phone size={19} />}{browserRoom ? 'End browser call' : 'Book by voice'}</button></section>
+            <article className="panel appointment-list-panel">
+              <div className="appointment-list-heading"><div><h2>{appointment.status === 'confirmed' ? 'Confirmed appointment' : 'Appointment status'}</h2><p>{appointment.status === 'confirmed' ? 'Created from the LiveKit voice call' : 'No confirmed voice appointment yet'}</p></div><span className={`status-pill ${appointment.status === 'confirmed' ? 'confirmed-pill' : ''}`}>{appointment.status === 'confirmed' ? 'Confirmed' : 'Waiting'}</span></div>
+              {appointment.status === 'confirmed' ? <div className="appointment-list-row"><div className="service-icon"><Wrench size={19} /></div><div><strong>{appointment.service}</strong><span>{appointment.date} <b>•</b> {appointment.bookedTime}</span></div><div className="appointment-source"><Sparkles size={15} /> Booked by receptionist</div></div> : <div className="empty-state"><CalendarDays size={28} /><strong>No appointment selected</strong><span>Start a voice call and complete a booking to see it here.</span></div>}
+            </article>
+          </>}
+
+          {activeView === 'customers' && <section className="workspace-header empty-workspace"><Users size={30} /><h1>Customers</h1><p className="subcopy">Customer records will be available when the scheduling demo is connected to a persistent database.</p></section>}
+          {activeView === 'settings' && <section className="workspace-header empty-workspace"><Settings size={30} /><h1>Settings</h1><p className="subcopy">LiveKit voice configuration is active and managed by the deployed receptionist agent.</p></section>}
         </div>
       </main>
     </div>
