@@ -1,6 +1,10 @@
 import { llm } from '@livekit/agents';
 import { z } from 'zod';
 import { SchedulingService, type ServiceId, services } from './scheduling.ts';
+import {
+  HttpTemporalBookingClient,
+  type TemporalBookingClient,
+} from './temporal-booking-client.ts';
 
 const serviceSchema = z.enum(['oil_change', 'tire_rotation', 'brake_inspection', 'diagnostic']);
 const emailSchema = z.string().email().describe('Customer email address in standard name@example.com format.');
@@ -16,12 +20,14 @@ export type ReceptionistEvent =
       };
     }
   | { type: 'appointment_booked'; appointment: ReturnType<typeof appointmentSummary> }
+  | { type: 'appointment_booking_started'; workflowId: string; appointment: ReturnType<typeof appointmentSummary> }
   | { type: 'appointment_rescheduled'; appointment: ReturnType<typeof appointmentSummary> }
   | { type: 'appointment_cancelled'; appointment: ReturnType<typeof appointmentSummary> }
   | { type: 'human_takeover_requested'; reason: string };
 
 type ReceptionistToolOptions = {
   onEvent?: ((event: ReceptionistEvent) => Promise<void> | void) | undefined;
+  workflowClient?: TemporalBookingClient | undefined;
 };
 
 function appointmentSummary(appointment: {
@@ -46,6 +52,8 @@ export function createReceptionistTools(
   scheduler: SchedulingService,
   options: ReceptionistToolOptions = {},
 ) {
+  const workflowClient = () => options.workflowClient ?? new HttpTemporalBookingClient();
+  const pendingAppointments = new Map<string, ReturnType<typeof appointmentSummary>>();
   return [
     llm.tool({
       name: 'getBusinessHours',
@@ -80,6 +88,68 @@ export function createReceptionistTools(
           },
         });
         return availability;
+      },
+    }),
+    llm.tool({
+      name: 'startAppointmentBooking',
+      description:
+        'Start a durable appointment hold after the customer has selected a real available time and you have collected their full name and verified email. Call this before asking for the customer’s final yes. Do not call this when the customer has already declined or cancelled.',
+      parameters: z.object({
+        customerName: z.string().min(2).describe('Customer full name.'),
+        email: emailSchema,
+        service: serviceSchema.describe('Service to book.'),
+        date: z.string().describe('Appointment date in YYYY-MM-DD format.'),
+        time: z.string().describe('Exact time returned by checkAvailability.'),
+      }),
+      execute: async ({ customerName, email, service, date, time }) => {
+        const booking = await workflowClient().start({
+          customerName,
+          email,
+          service,
+          date,
+          requestedTime: time,
+        });
+        const appointment = appointmentSummary({
+          id: booking.workflowId,
+          customerName,
+          service,
+          date,
+          time,
+          status: booking.status,
+        });
+        pendingAppointments.set(booking.workflowId, appointment);
+        await options.onEvent?.({
+          type: 'appointment_booking_started',
+          workflowId: booking.workflowId,
+          appointment,
+        });
+        return { ...booking, appointment };
+      },
+    }),
+    llm.tool({
+      name: 'confirmAppointmentBooking',
+      description:
+        'Confirm or cancel a durable appointment hold. Call only after the customer explicitly answers yes or no to the final appointment summary. Use the workflowId returned by startAppointmentBooking. Never read the workflow ID aloud.',
+      parameters: z.object({
+        workflowId: z.string().describe('Workflow ID returned by startAppointmentBooking.'),
+        customerConfirmed: z
+          .boolean()
+          .describe('True only after the customer explicitly confirms the appointment details.'),
+      }),
+      execute: async ({ workflowId, customerConfirmed }) => {
+        if (!customerConfirmed) {
+          await workflowClient().signal(workflowId, 'cancel');
+          pendingAppointments.delete(workflowId);
+          return { confirmed: false, cancelled: true };
+        }
+        await workflowClient().signal(workflowId, 'confirm');
+        const pendingAppointment = pendingAppointments.get(workflowId);
+        if (pendingAppointment) {
+          const appointment = { ...pendingAppointment, status: 'confirmed' };
+          await options.onEvent?.({ type: 'appointment_booked', appointment });
+          pendingAppointments.delete(workflowId);
+        }
+        return { confirmed: true, workflowId };
       },
     }),
     llm.tool({

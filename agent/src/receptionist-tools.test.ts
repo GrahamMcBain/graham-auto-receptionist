@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createReceptionistTools } from './receptionist-tools.ts';
 import { SchedulingService } from './scheduling.ts';
+import type { TemporalBookingClient } from './temporal-booking-client.ts';
 
 type Tool = {
   name: string;
@@ -59,6 +60,51 @@ describe('receptionist tools', () => {
 
     const confirmed = await bookAppointment.execute({ ...request, customerConfirmed: true }, {});
     expect(confirmed).toMatchObject({ booked: true, appointment: { time: '10:30 AM' } });
+  });
+
+  it('starts a durable booking, then signals confirmation only after the caller says yes', async () => {
+    const calls: unknown[] = [];
+    const events: unknown[] = [];
+    const workflowClient: TemporalBookingClient = {
+      start: async (request) => {
+        calls.push({ type: 'start', request });
+        return { workflowId: 'appointment-demo', status: 'pending' };
+      },
+      signal: async (workflowId, action) => {
+        calls.push({ type: 'signal', workflowId, action });
+      },
+    };
+    const tools = createReceptionistTools(new SchedulingService(), {
+      workflowClient,
+      onEvent: (event) => events.push(event),
+    }) as unknown as Tool[];
+    const start = tools.find((candidate) => candidate.name === 'startAppointmentBooking');
+    const confirm = tools.find((candidate) => candidate.name === 'confirmAppointmentBooking');
+    if (!start || !confirm) throw new Error('Missing Temporal booking tools');
+
+    const request = {
+      customerName: 'John Smith',
+      email: 'john@example.com',
+      service: 'oil_change',
+      date: '2026-07-28',
+      time: '10:30 AM',
+    };
+    await confirm.execute({ workflowId: 'appointment-demo', customerConfirmed: false }, {});
+    expect(calls).toContainEqual({ type: 'signal', workflowId: 'appointment-demo', action: 'cancel' });
+
+    const pending = await start.execute(request, {});
+    expect(pending).toMatchObject({ workflowId: 'appointment-demo', status: 'pending' });
+
+    const confirmed = await confirm.execute(
+      { workflowId: 'appointment-demo', customerConfirmed: true },
+      {},
+    );
+    expect(confirmed).toMatchObject({ confirmed: true });
+    expect(calls).toContainEqual({ type: 'signal', workflowId: 'appointment-demo', action: 'confirm' });
+    expect(events).toContainEqual({
+      type: 'appointment_booked',
+      appointment: expect.objectContaining({ status: 'confirmed', time: '10:30 AM' }),
+    });
   });
 
   it('marks a human handoff request for the staff dashboard', async () => {

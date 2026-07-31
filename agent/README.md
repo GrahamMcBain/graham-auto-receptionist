@@ -136,6 +136,15 @@ Once you've started your own project based on this repo, you should:
 
 This project is production-ready and includes a working `Dockerfile`. To deploy it to LiveKit Cloud or another environment, see the [deploying to production](https://docs.livekit.io/deploy/agents/) guide.
 
+### Durable appointment booking with Temporal
+
+The receptionist keeps LiveKit for the voice experience, but its booking tools can hand the appointment lifecycle to a separate Temporal-backed API. Set these two Agent secrets in LiveKit Cloud before deploying the agent:
+
+- `TEMPORAL_BOOKING_API_URL`: the deployed Vercel URL for the Temporal Auto Receptionist API.
+- `TEMPORAL_BOOKING_API_SECRET`: a server-to-server secret that matches `TEMPORAL_BOOKING_API_SECRET` on that Vercel project.
+
+With those values set, the receptionist starts a durable Temporal hold after a caller selects a slot and signals it only after the caller explicitly confirms. The LiveKit browser app itself does not need any changes.
+
 ## Self-hosted LiveKit
 
 You can also self-host LiveKit instead of using LiveKit Cloud. See the [self-hosting](https://docs.livekit.io/transport/self-hosting/local/) guide for more information. If you choose to self-host, you'll need to also use [model plugins](https://docs.livekit.io/agents/models/#plugins) instead of LiveKit Inference and will need to remove the [LiveKit Cloud noise cancellation](https://docs.livekit.io/transport/media/noise-cancellation/) plugin.
