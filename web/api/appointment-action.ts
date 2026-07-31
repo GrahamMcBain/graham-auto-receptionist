@@ -1,5 +1,5 @@
-import { requireAgentSecret } from './temporal-auth'
-import { createTemporalClient } from './temporal-client'
+import { requireAgentSecret } from './temporal-auth.js'
+import { createTemporalClient } from './temporal-client.js'
 
 const signals = { confirm: 'confirmAppointment', cancel: 'cancelAppointment' } as const
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { requireAgentSecret } from './temporal-auth'
-import { createTemporalClient, temporalTaskQueue } from './temporal-client'
+import { requireAgentSecret } from './temporal-auth.js'
+import { createTemporalClient, temporalTaskQueue } from './temporal-client.js'
 
 type AppointmentRequest = {
   customerName: string
